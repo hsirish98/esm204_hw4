@@ -1,0 +1,82 @@
+---
+title: "Econ HW 4"
+author: "Hannah Irish & Lauren Barnum"
+date: "2023-05-25"
+output: 
+  html_document:
+      code_folding: hide
+---
+
+```{r setup, include=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE)
+library(tidyverse)
+library(here)
+```
+
+Read in data
+```{r}
+damages <- read_csv(here("data/damages.csv"))
+warming <- read_csv(here("data/warming.csv"))
+
+colnames(warming) = c("year", "baseline", "pulse")
+
+warming <- warming %>% pivot_longer(cols=c(2,3), names_to = "scenario", values_to = "warming")
+```
+
+Always plot your data!
+```{r}
+ggplot(damages_tidy, aes(warming,damages))+
+  geom_point() +
+  labs(x="Level of Global Mean Temperature Warming (C)", y="Damages ($)", title="Damages from Degree(C) Mean Temp Warning vs. Pre-Industrial")+
+  theme_minimal()
+```
+Fit a quadratic function
+```{r}
+
+damages_qm <- lm(damages ~ (0 + (warming)^2), data=damages)
+
+damage_coef <- as.numeric(damages_qm$coefficients)
+
+damages_reg <- damages %>%
+  mutate(regression = (damage_coef * warming^2))
+
+colnames(damages_reg)[2] = "observed"
+
+damages_tidy <- damages_reg %>%
+  pivot_longer(cols=c(2,3), names_to = "method", values_to = "damages")
+  
+
+##test that this did what we wanted it to
+degrees_test <- seq(1, 10, 0.1)
+test_df <- data.frame(degrees_test) %>%
+  mutate(damages = damage_coef/5*(degrees_test^2))
+
+# ggplot(test_df, aes(degrees_test, damages)) +
+#   geom_point() +
+#   theme_minimal()
+
+```
+
+The formula for damages as a function of warming degrees is damages = `r format(damage_coef, big.mark=",", scientific=FALSE)`*warming^2`
+
+
+
+```{r}
+
+ggplot(damages, aes(warming,damages))+
+  geom_point() +
+  geom_line(data=test_df, aes(degrees_test, damages, color="red"))+
+  labs(x="Level of Global Mean Temperature Warming (C)", y="Damages ($)", title="Damages from Degree(C) Mean Temp Warning vs. Pre-Industrial")+
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+
+
+
