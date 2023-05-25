@@ -15,7 +15,7 @@ library(here)
 
 Read in data
 ```{r}
-damages <- read_csv(here("data/damages.csv"))
+damages_df <- read_csv(here("data/damages.csv"))
 warming <- read_csv(here("data/warming.csv"))
 
 colnames(warming) = c("year", "baseline", "pulse")
@@ -33,11 +33,11 @@ ggplot(damages_tidy, aes(warming,damages))+
 Fit a quadratic function
 ```{r}
 
-damages_qm <- lm(damages ~ (0 + (warming)^2), data=damages)
+damages_qm <- lm(damages ~ (0 + (warming)^2), data=damages_df)
 
 damage_coef <- as.numeric(damages_qm$coefficients)
 
-damages_reg <- damages %>%
+damages_reg <- damages_df %>%
   mutate(regression = (damage_coef * warming^2))
 
 colnames(damages_reg)[2] = "observed"
@@ -49,7 +49,7 @@ damages_tidy <- damages_reg %>%
 ##test that this did what we wanted it to
 degrees_test <- seq(1, 10, 0.1)
 test_df <- data.frame(degrees_test) %>%
-  mutate(damages = damage_coef/5*(degrees_test^2))
+  mutate(damages = damage_coef *(degrees_test^2))
 
 # ggplot(test_df, aes(degrees_test, damages)) +
 #   geom_point() +
@@ -63,7 +63,7 @@ The formula for damages as a function of warming degrees is damages = `r format(
 
 ```{r}
 
-ggplot(damages, aes(warming,damages))+
+ggplot(damages_df, aes(warming,damages))+
   geom_point() +
   geom_line(data=test_df, aes(degrees_test, damages, color="red"))+
   labs(x="Level of Global Mean Temperature Warming (C)", y="Damages ($)", title="Damages from Degree(C) Mean Temp Warning vs. Pre-Industrial")+
