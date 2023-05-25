@@ -14,28 +14,31 @@ library(here)
 ```
 
 Read in data
-```{r}
-damages_df <- read_csv(here("data/damages.csv"))
+```{r, message=FALSE}
+damages_df <- read_csv(here("data/damages.csv")) %>%
+  mutate(warming2 = warming^2)
 warming <- read_csv(here("data/warming.csv"))
 
 colnames(warming) = c("year", "baseline", "pulse")
 
-warming <- warming %>% pivot_longer(cols=c(2,3), names_to = "scenario", values_to = "warming")
 ```
 
 Always plot your data!
 ```{r}
-ggplot(damages_tidy, aes(warming,damages))+
+ggplot(damages_df, aes(warming,damages))+
   geom_point() +
   labs(x="Level of Global Mean Temperature Warming (C)", y="Damages ($)", title="Damages from Degree(C) Mean Temp Warning vs. Pre-Industrial")+
   theme_minimal()
 ```
+
+## **Question 1**
+
 Fit a quadratic function
 ```{r}
 
-damages_qm <- lm(damages ~ (0 + (warming)^2), data=damages_df)
+damages_qm <- lm(damages ~ 0 + warming + warming2, data=damages_df)
 
-damage_coef <- as.numeric(damages_qm$coefficients)
+damage_coef <- as.numeric(damages_qm$coefficients)[2]
 
 damages_reg <- damages_df %>%
   mutate(regression = (damage_coef * warming^2))
@@ -49,7 +52,7 @@ damages_tidy <- damages_reg %>%
 ##test that this did what we wanted it to
 degrees_test <- seq(1, 10, 0.1)
 test_df <- data.frame(degrees_test) %>%
-  mutate(damages = damage_coef *(degrees_test^2))
+  mutate(damages = damage_coef*(degrees_test^2))
 
 # ggplot(test_df, aes(degrees_test, damages)) +
 #   geom_point() +
@@ -71,8 +74,111 @@ ggplot(damages_df, aes(warming,damages))+
 
 ```
 
+## **Question 2**
+
+```{r}
+damages_func <- function(warming){
+  damages = damage_coef * warming^2 
+  return(damages)
+}
 
 
+warming_dam <- warming %>%
+  mutate(damages_baseline = damages_func(baseline), damages_pulse = damages_func(pulse))
+
+warming_dam <- warming_dam %>%
+  mutate(difference=damages_pulse-damages_baseline, per_ton = difference/35000000000)
+
+baseline_damages <- ggplot(warming_dam, aes(year, damages_baseline)) +
+  geom_point(color="blue") +
+  labs(x= "Year", y="Damages ($)", title="Baseline") +
+  ylim(0, 400000000000000)+
+  theme_minimal()
+  
+
+pulse_damages <- ggplot(warming_dam, aes(year, damages_pulse)) +
+  geom_point(color="purple") +
+  labs(x= "Year", y="Damages ($)", title="Pulse") + 
+  ylim(0, 400000000000000)+
+  theme_minimal()
+
+
+diff_damages <- ggplot(warming_dam, aes(year, difference)) +
+  geom_point(color="purple") +
+  labs(x= "Year", y="Difference in Damages ($)", title="Pulse-Baseline") +
+  theme_minimal()
+
+
+diff_damages_co2 <- ggplot(warming_dam, aes(year, per_ton)) +
+  geom_point(color="blue") +
+  labs(x= "Year", y="Difference in Damages ($)", title="Pulse-Baseline per ton CO2") + 
+  theme_minimal()
+
+
+cowplot::plot_grid(baseline_damages,pulse_damages,diff_damages,diff_damages_co2)
+
+```
+## **Question 3**
+
+```{r}
+discounting_func <- function(amount, r, t){
+  discounted_amount = amount/(1+r)^t
+}
+
+
+t <- seq(1, nrow(warming_dam), 1)
+
+scc_df <- cbind(warming_dam, t)
+
+scc_df <- scc_df %>%
+  mutate(one = discounting_func(per_ton,0.01, t),
+         two = discounting_func(per_ton,0.02, t),
+         three = discounting_func(per_ton,0.03, t),
+         four = discounting_func(per_ton,0.04, t),
+         five = discounting_func(per_ton,0.05, t),
+         six = discounting_func(per_ton,0.06, t),
+         seven = discounting_func(per_ton,0.07, t),
+         eight = discounting_func(per_ton,0.08, t))
+
+scc_only <- scc_df %>%
+  select(c(4:11))
+
+scc_sums <- data.frame(colSums(scc_only))
+
+rates <- c(1:8)
+
+scc_sums_rates <- cbind(scc_sums, rates) 
+
+colnames(scc_sums_rates)[1] = "scc"
+
+ggplot(scc_sums_rates, aes(as.factor(rates), scc)) +
+  geom_point(size=3)+
+  labs(x="Discount Rate", y="Cost ($)", title = "Social Cost of Carbon Under Different Discount Rates")+
+  theme_minimal()
+```
+
+## ** Question 4**
+
+```{r, fig.cap = "Social Cost of Carbon under different Discount rates, with the SCC calculated by the r from the Ramsey Rule as the red triangle"}
+r_ramsey = 0.001+(2*0.01)
+
+scc_df <- scc_df %>%
+  mutate(ramsey = discounting_func(per_ton,r_ramsey, t)) %>%
+  summarize(sum=sum(ramsey))
+
+ramsey_cost <- as.numeric(scc_df[1,1])
+
+ggplot(scc_sums_rates, aes(rates, scc)) +
+  geom_point(size=3)+
+  geom_point(aes(x=r_ramsey*100, y=ramsey_cost), colour="red", shape="triangle",size=3)+
+  labs(x="Discount Rate", y="Cost ($)", title = "Social Cost of Carbon Under Different Discount Rates")+
+  theme_minimal()
+
+
+
+
+
+```
 
 
 
