@@ -196,7 +196,57 @@ ggplot(scc_sums, aes(discount_rate, scc)) +
 ```{r}
 
 
+replace_1.29 <- function(year, value)
+{
+  output = ifelse(year<=2050, value, 1.29)
+  return(output)
+
+}
+
+damages_5 <- warming_dam %>%
+  select(1, 2) %>%
+  mutate(worst_case = baseline*1.5, intervention=replace_1.29(year, baseline)) %>%
+  mutate(baseline = damages_func(baseline), worst_case = damages_func(worst_case), intervention = damages_func(intervention))
+
+
+damages_plotable <- damages_5 %>%
+  pivot_longer(cols=c(2:4), names_to = "scenario", values_to = "warming") %>%
+  mutate(damages = damages_func(warming))
+
+ggplot(damages_plotable, aes(x=year, y=damages, color=scenario))+
+  geom_point() +
+  scale_color_viridis_d()+
+  theme_minimal()
+
 ```
 
 
 
+```{r}
+
+times <- seq(1, nrow(warming_dam), 1)
+r_5 <- 0.02
+
+total_d_baseline = t(as.data.frame(purrr::pmap(list(damages_5$baseline, times), discounting_func, r=r_5)))
+
+baseline_cost=sum(total_d_baseline)
+
+total_d_worstcase = t(as.data.frame(purrr::pmap(list(damages_5$worst_case, times), discounting_func, r=r_5)))
+
+worstcase_cost = sum(total_d_worstcase)
+
+total_d_intervention = t(as.data.frame(purrr::pmap(list(damages_5$intervention, times), discounting_func, r=r_5)))
+
+intervention_cost =sum(total_d_intervention)
+
+optionB = intervention_cost
+
+optionA = 0.5*(baseline_cost) + 0.5*worstcase_cost
+
+```
+
+Pursuing option A costs $`r format(optionA, scientific=FALSE)` and pursuing option B costs $`r format(optionB,scientific=FALSE)`  
+
+Since Option A is $`r format(optionA-optionB, scientific=FALSE)` more costly than Option B, Option B could cost this much to still be worth picking over Option A.
+
+If society were risk averse, then the 
