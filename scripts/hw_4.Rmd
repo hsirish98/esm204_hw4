@@ -15,16 +15,21 @@ library(here)
 
 Read in data
 ```{r, message=FALSE}
+
+##read in data
 damages_df <- read_csv(here("data/damages.csv")) %>%
   mutate(warming2 = warming^2)
 warming <- read_csv(here("data/warming.csv"))
 
+##name columns how I want for the warming data
 colnames(warming) = c("year", "baseline", "pulse")
 
 ```
 
 Always plot your data!
 ```{r}
+
+##Plot to see what we're working with
 ggplot(damages_df, aes(warming,damages))+
   geom_point() +
   labs(x="Level of Global Mean Temperature Warming (C)", y="Damages ($)", title="Damages from Degree(C) Mean Temp Warning vs. Pre-Industrial")+
@@ -36,18 +41,13 @@ ggplot(damages_df, aes(warming,damages))+
 Fit a quadratic function
 ```{r}
 
+##2nd order polynomial function
 damages_qm <- lm(damages ~ 0 + warming + warming2, data=damages_df)
 
+
+##extract coefficients
 damage_coef <- as.numeric(damages_qm$coefficients)[2]
 
-damages_reg <- damages_df %>%
-  mutate(regression = (damage_coef * warming^2))
-
-colnames(damages_reg)[2] = "observed"
-
-damages_tidy <- damages_reg %>%
-  pivot_longer(cols=c(2,3), names_to = "method", values_to = "damages")
-  
 
 ##test that this did what we wanted it to
 degrees_test <- seq(1, 10, 0.1)
@@ -66,9 +66,11 @@ The formula for damages as a function of warming degrees is damages = `r format(
 
 ```{r}
 
+##since I made the df that used the regression values, I can use that for my line
 ggplot(damages_df, aes(warming,damages))+
   geom_point() +
-  geom_line(data=test_df, aes(degrees_test, damages, color="red"))+
+  geom_line(data=test_df, aes(degrees_test, damages),  color="red")+
+  annotate("text", x=6, y=3000000000000000, label="Regression", color="red")+
   labs(x="Level of Global Mean Temperature Warming (C)", y="Damages ($)", title="Damages from Degree(C) Mean Temp Warning vs. Pre-Industrial")+
   theme_minimal()
 
@@ -77,18 +79,23 @@ ggplot(damages_df, aes(warming,damages))+
 ## **Question 2**
 
 ```{r}
+
+##make a function for my damages regression
 damages_func <- function(warming){
   damages = damage_coef * warming^2 
   return(damages)
 }
 
 
+##calculate damages from baseline and pulse and add to data frame
 warming_dam <- warming %>%
   mutate(damages_baseline = damages_func(baseline), damages_pulse = damages_func(pulse))
 
+##calculate damage difference and difference associated with each ton increase of carbon
 warming_dam <- warming_dam %>%
   mutate(difference=damages_pulse-damages_baseline, per_ton = difference/35000000000)
 
+##plot all 4 
 baseline_damages <- ggplot(warming_dam, aes(year, damages_baseline)) +
   geom_point(color="blue") +
   labs(x= "Year", y="Damages ($)", title="Baseline") +
@@ -114,61 +121,66 @@ diff_damages_co2 <- ggplot(warming_dam, aes(year, per_ton)) +
   labs(x= "Year", y="Difference in Damages ($)", title="Pulse-Baseline per ton CO2") + 
   theme_minimal()
 
+##arrange for .html
 
 cowplot::plot_grid(baseline_damages,pulse_damages,diff_damages,diff_damages_co2)
 
 ```
+
 ## **Question 3**
 
+
 ```{r}
-discounting_func <- function(amount, r, t){
+
+##make discounting function for D/(1+r)^t
+discounting_func <- function(amount, t, r){
   discounted_amount = amount/(1+r)^t
 }
 
+##make arguments to use in pmap()
+times <- seq(1, nrow(warming_dam), 1)
+rs <- seq(0.01,0.08,0.01)
+carbons <- warming_dam$per_ton
 
-t <- seq(1, nrow(warming_dam), 1)
+##make data frame of output of pmap()
+my_matrix <- as.data.frame(purrr::pmap(list(carbons, times), discounting_func, r=rs))
 
-scc_df <- cbind(warming_dam, t)
+##rename columns with times vector bc it's ugly
+colnames(my_matrix) <- times
 
-scc_df <- scc_df %>%
-  mutate(one = discounting_func(per_ton,0.01, t),
-         two = discounting_func(per_ton,0.02, t),
-         three = discounting_func(per_ton,0.03, t),
-         four = discounting_func(per_ton,0.04, t),
-         five = discounting_func(per_ton,0.05, t),
-         six = discounting_func(per_ton,0.06, t),
-         seven = discounting_func(per_ton,0.07, t),
-         eight = discounting_func(per_ton,0.08, t))
+##switch x and y
+righted <- as.data.frame(t(my_matrix))
 
-scc_only <- scc_df %>%
-  select(c(4:11))
+##name columns with rates 
+colnames(righted) = rs
 
-scc_sums <- data.frame(colSums(scc_only))
+##find sums to get social cost of carbon
+scc_sums <- righted %>%
+  summarize(across(c(1:ncol(righted)), sum)) %>%
+  pivot_longer(everything(), names_to = "discount_rate", values_to = "scc") 
 
-rates <- c(1:8)
-
-scc_sums_rates <- cbind(scc_sums, rates) 
-
-colnames(scc_sums_rates)[1] = "scc"
-
-ggplot(scc_sums_rates, aes(as.factor(rates), scc)) +
+##Plot
+ggplot(scc_sums, aes(discount_rate, scc)) +
   geom_point(size=3)+
   labs(x="Discount Rate", y="Cost ($)", title = "Social Cost of Carbon Under Different Discount Rates")+
   theme_minimal()
 ```
 
-## ** Question 4**
+## **Question 4**
 
 ```{r, fig.cap = "Social Cost of Carbon under different Discount rates, with the SCC calculated by the r from the Ramsey Rule as the red triangle"}
+
+##calculate r under ramsey rule
 r_ramsey = 0.001+(2*0.01)
 
-scc_df <- scc_df %>%
-  mutate(ramsey = discounting_func(per_ton,r_ramsey, t)) %>%
-  summarize(sum=sum(ramsey))
+##make x and y switched data frame from pmap output
+ramsey_df <- t(as.data.frame(purrr::pmap(list(carbons, times), discounting_func, r=r_ramsey))) 
 
-ramsey_cost <- as.numeric(scc_df[1,1])
+##calculate sum (scc under Ramsey Rule)
+ramsey_cost=sum(ramsey_df)
 
-ggplot(scc_sums_rates, aes(rates, scc)) +
+##plot first plot showing ramsey 
+ggplot(scc_sums, aes(discount_rate, scc)) +
   geom_point(size=3)+
   geom_point(aes(x=r_ramsey*100, y=ramsey_cost), colour="red", shape="triangle",size=3)+
   labs(x="Discount Rate", y="Cost ($)", title = "Social Cost of Carbon Under Different Discount Rates")+
@@ -176,13 +188,15 @@ ggplot(scc_sums_rates, aes(rates, scc)) +
 
 
 
-
-
 ```
 
 
+## **Question 5**
+
+```{r}
 
 
+```
 
 
 
